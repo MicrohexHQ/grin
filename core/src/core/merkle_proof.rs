@@ -17,7 +17,7 @@
 use crate::core::hash::Hash;
 use crate::core::pmmr;
 use crate::ser;
-use crate::ser::{PMMRIndexHashable, Readable, Reader, Writeable, Writer};
+use crate::ser::{HashWriteable, PMMRIndexHashable, Readable, Reader, Writer};
 use crate::util;
 
 /// Merkle proof errors.
@@ -37,12 +37,12 @@ pub struct MerkleProof {
 	pub path: Vec<Hash>,
 }
 
-impl Writeable for MerkleProof {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+impl HashWriteable for MerkleProof {
+	type MakeWriteable = ser::hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		writer.write_u64(self.mmr_size)?;
 		writer.write_u64(self.path.len() as u64)?;
-		self.path.write(writer)?;
-		Ok(())
+		self.path.write_for_hash(writer)
 	}
 }
 

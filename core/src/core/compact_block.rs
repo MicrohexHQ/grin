@@ -20,7 +20,9 @@ use crate::core::block::{Block, BlockHeader, Error};
 use crate::core::hash::{DefaultHashable, Hashed};
 use crate::core::id::ShortIdentifiable;
 use crate::core::{Output, ShortId, TxKernel};
-use crate::ser::{self, read_multi, Readable, Reader, VerifySortedAndUnique, Writeable, Writer};
+use crate::ser::{
+	self, read_multi, HashWriteable, Readable, Reader, VerifySortedAndUnique, Writeable, Writer,
+};
 
 /// Container for full (full) outputs and kernels and kern_ids for a compact block.
 #[derive(Debug, Clone)]
@@ -99,8 +101,9 @@ impl Readable for CompactBlockBody {
 	}
 }
 
-impl Writeable for CompactBlockBody {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+impl HashWriteable for CompactBlockBody {
+	type MakeWriteable = ser::hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		ser_multiwrite!(
 			writer,
 			[write_u64, self.out_full.len() as u64],
@@ -200,16 +203,18 @@ impl From<Block> for CompactBlock {
 /// Implementation of Writeable for a compact block, defines how to write the
 /// block to a binary writer. Differentiates between writing the block for the
 /// purpose of full serialization and the one of just extracting a hash.
+impl HashWriteable for CompactBlock {
+	type MakeWriteable = ser::hash_writeable_default::No;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+		self.header.write_for_hash(writer)
+	}
+}
+
 impl Writeable for CompactBlock {
 	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		self.header.write(writer)?;
-
-		if writer.serialization_mode() != ser::SerializationMode::Hash {
-			writer.write_u64(self.nonce)?;
-			self.body.write(writer)?;
-		}
-
-		Ok(())
+		writer.write_u64(self.nonce)?;
+		self.body.write(writer)
 	}
 }
 

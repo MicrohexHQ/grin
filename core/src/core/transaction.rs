@@ -19,8 +19,8 @@ use crate::core::verifier_cache::VerifierCache;
 use crate::core::{committed, Committed};
 use crate::keychain::{self, BlindingFactor};
 use crate::ser::{
-	self, read_multi, FixedLength, PMMRable, Readable, Reader, VerifySortedAndUnique, Writeable,
-	Writer,
+	self, read_multi, FixedLength, HashWriteable, PMMRable, Readable, Reader,
+	VerifySortedAndUnique, Writeable, Writer,
 };
 use crate::util;
 use crate::util::secp;
@@ -51,8 +51,9 @@ enum_from_primitive! {
 
 impl DefaultHashable for KernelFeatures {}
 
-impl Writeable for KernelFeatures {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+impl HashWriteable for KernelFeatures {
+	type MakeWriteable = ser::hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		writer.write_u8(*self as u8)?;
 		Ok(())
 	}
@@ -182,8 +183,9 @@ impl ::std::hash::Hash for TxKernel {
 	}
 }
 
-impl Writeable for TxKernel {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+impl HashWriteable for TxKernel {
+	type MakeWriteable = ser::hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		self.features.write(writer)?;
 		ser_multiwrite!(writer, [write_u64, self.fee], [write_u64, self.lock_height]);
 		self.excess.write(writer)?;
@@ -322,8 +324,9 @@ pub struct TxKernelEntry {
 	pub kernel: TxKernel,
 }
 
-impl Writeable for TxKernelEntry {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+impl HashWriteable for TxKernelEntry {
+	type MakeWriteable = ser::hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		self.kernel.write(writer)?;
 		Ok(())
 	}
@@ -409,8 +412,9 @@ impl PartialEq for TransactionBody {
 
 /// Implementation of Writeable for a body, defines how to
 /// write the body as binary.
-impl Writeable for TransactionBody {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+impl HashWriteable for TransactionBody {
+	type MakeWriteable = ser::hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		ser_multiwrite!(
 			writer,
 			[write_u64, self.inputs.len() as u64],
@@ -779,8 +783,9 @@ impl Into<TransactionBody> for Transaction {
 
 /// Implementation of Writeable for a fully blinded transaction, defines how to
 /// write the transaction as binary.
-impl Writeable for Transaction {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+impl HashWriteable for Transaction {
+	type MakeWriteable = ser::hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		self.offset.write(writer)?;
 		self.body.write(writer)?;
 		Ok(())
@@ -1147,8 +1152,9 @@ impl ::std::hash::Hash for Input {
 
 /// Implementation of Writeable for a transaction Input, defines how to write
 /// an Input as binary.
-impl Writeable for Input {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+impl HashWriteable for Input {
+	type MakeWriteable = ser::hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		self.features.write(writer)?;
 		self.commit.write(writer)?;
 		Ok(())
@@ -1208,8 +1214,9 @@ enum_from_primitive! {
 	}
 }
 
-impl Writeable for OutputFeatures {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+impl HashWriteable for OutputFeatures {
+	type MakeWriteable = ser::hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		writer.write_u8(*self as u8)?;
 		Ok(())
 	}
@@ -1253,16 +1260,22 @@ impl ::std::hash::Hash for Output {
 
 /// Implementation of Writeable for a transaction Output, defines how to write
 /// an Output as binary.
-impl Writeable for Output {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+impl HashWriteable for Output {
+	type MakeWriteable = ser::hash_writeable_default::No;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		self.features.write(writer)?;
 		self.commit.write(writer)?;
 		// The hash of an output doesn't include the range proof, which
 		// is committed to separately
-		if writer.serialization_mode() != ser::SerializationMode::Hash {
-			writer.write_bytes(&self.proof)?
-		}
 		Ok(())
+	}
+}
+
+impl Writeable for Output {
+	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+		self.features.write(writer)?;
+		self.commit.write(writer)?;
+		writer.write_bytes(&self.proof)
 	}
 }
 
@@ -1408,8 +1421,9 @@ impl FixedLength for OutputIdentifier {
 	const LEN: usize = 1 + secp::constants::PEDERSEN_COMMITMENT_SIZE;
 }
 
-impl Writeable for OutputIdentifier {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+impl HashWriteable for OutputIdentifier {
+	type MakeWriteable = ser::hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		self.features.write(writer)?;
 		self.commit.write(writer)?;
 		Ok(())

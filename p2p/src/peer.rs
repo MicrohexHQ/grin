@@ -387,7 +387,7 @@ impl Peer {
 			.as_ref()
 			.unwrap()
 			.lock()
-			.send(&Locator { hashes: locator }, msg::Type::GetHeaders)
+			.send(Locator { hashes: locator }, msg::Type::GetHeaders)
 	}
 
 	pub fn send_tx_request(&self, h: Hash) -> Result<(), Error> {
@@ -426,7 +426,7 @@ impl Peer {
 	pub fn send_peer_request(&self, capab: Capabilities) -> Result<(), Error> {
 		trace!("Asking {} for more peers {:?}", self.info.addr, capab);
 		self.connection.as_ref().unwrap().lock().send(
-			&GetPeerAddrs {
+			GetPeerAddrs {
 				capabilities: capab,
 			},
 			msg::Type::GetPeerAddrs,
@@ -439,7 +439,7 @@ impl Peer {
 			self.info.addr, height, hash
 		);
 		self.connection.as_ref().unwrap().lock().send(
-			&TxHashSetRequest { hash, height },
+			TxHashSetRequest { hash, height },
 			msg::Type::TxHashSetRequest,
 		)
 	}

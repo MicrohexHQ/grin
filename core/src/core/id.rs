@@ -21,7 +21,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use siphasher::sip::SipHasher24;
 
 use crate::core::hash::{DefaultHashable, Hash, Hashed};
-use crate::ser::{self, Readable, Reader, Writeable, Writer};
+use crate::ser::{self, HashWriteable, Readable, Reader, Writeable, Writer};
 use crate::util;
 
 /// The size of a short id used to identify inputs|outputs|kernels (6 bytes)
@@ -96,8 +96,9 @@ impl Readable for ShortId {
 	}
 }
 
-impl Writeable for ShortId {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+impl HashWriteable for ShortId {
+	type MakeWriteable = ser::hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		writer.write_fixed_bytes(&self.0)
 	}
 }
@@ -132,7 +133,7 @@ impl ShortId {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::ser::{Writeable, Writer};
+	use crate::ser::{HashWriteable, Writeable, Writer};
 
 	#[test]
 	fn short_id_ord() {
@@ -162,10 +163,10 @@ mod test {
 		// minimal struct for testing
 		// make it implement Writeable, therefore Hashable, therefore ShortIdentifiable
 		struct Foo(u64);
-		impl Writeable for Foo {
-			fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
-				writer.write_u64(self.0)?;
-				Ok(())
+		impl HashWriteable for Foo {
+			type MakeWriteable = ser::hash_writeable_default::Yes;
+			fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+				writer.write_u64(self.0)
 			}
 		}
 

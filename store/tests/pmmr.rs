@@ -24,7 +24,8 @@ use croaring::Bitmap;
 use crate::core::core::hash::DefaultHashable;
 use crate::core::core::pmmr::{Backend, PMMR};
 use crate::core::ser::{
-	Error, FixedLength, PMMRIndexHashable, PMMRable, Readable, Reader, Writeable, Writer,
+	hash_writeable_default, Error, FixedLength, HashWriteable, PMMRIndexHashable, PMMRable,
+	Readable, Reader, Writeable, Writer,
 };
 use crate::store::types::prune_noop;
 
@@ -918,8 +919,9 @@ impl PMMRable for TestElem {
 	}
 }
 
-impl Writeable for TestElem {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+impl HashWriteable for TestElem {
+	type MakeWriteable = hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
 		writer.write_u32(self.0)
 	}
 }

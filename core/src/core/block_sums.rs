@@ -16,7 +16,7 @@
 //! Allows fast "full" verification of kernel sums at a given block height.
 
 use crate::core::committed::Committed;
-use crate::ser::{self, Readable, Reader, Writeable, Writer};
+use crate::ser::{self, HashWriteable, Readable, Reader, Writer};
 use crate::util::secp::pedersen::Commitment;
 use crate::util::secp_static;
 
@@ -32,8 +32,9 @@ pub struct BlockSums {
 	pub kernel_sum: Commitment,
 }
 
-impl Writeable for BlockSums {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+impl HashWriteable for BlockSums {
+	type MakeWriteable = ser::hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		writer.write_fixed_bytes(&self.utxo_sum)?;
 		writer.write_fixed_bytes(&self.kernel_sum)?;
 		Ok(())

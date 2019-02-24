@@ -32,8 +32,8 @@ use crate::core::{
 };
 use crate::global;
 use crate::keychain::{self, BlindingFactor};
-use crate::pow::{Difficulty, Proof, ProofOfWork};
-use crate::ser::{self, FixedLength, PMMRable, Readable, Reader, Writeable, Writer};
+use crate::pow::{Difficulty, Proof, ProofOfWork, VersionedPow};
+use crate::ser::{self, FixedLength, HashWriteable, PMMRable, Readable, Reader, Writeable, Writer};
 use crate::util::{secp, static_secp_instance};
 
 /// Errors thrown by Block validation
@@ -197,7 +197,11 @@ pub struct BlockHeader {
 	/// Proof of work and related
 	pub pow: ProofOfWork,
 }
-impl DefaultHashable for BlockHeader {}
+impl Hashed for BlockHeader {
+	fn hash(&self) -> Hash {
+		self.pow.proof.hash()
+	}
+}
 
 impl Default for BlockHeader {
 	fn default() -> BlockHeader {
@@ -233,13 +237,16 @@ impl PMMRable for BlockHeader {
 }
 
 /// Serialization of a block header
+impl HashWriteable for BlockHeader {
+	type MakeWriteable = ser::hash_writeable_default::No;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+		self.pow.write_for_hash(writer)
+	}
+}
 impl Writeable for BlockHeader {
 	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
-		if writer.serialization_mode() != ser::SerializationMode::Hash {
-			self.write_pre_pow(writer)?;
-		}
-		self.pow.write(self.version, writer)?;
-		Ok(())
+		self.write_pre_pow(writer)?;
+		VersionedPow(&self.pow, self.version).write(writer)
 	}
 }
 
@@ -364,14 +371,16 @@ impl Hashed for Block {
 /// Implementation of Writeable for a block, defines how to write the block to a
 /// binary writer. Differentiates between writing the block for the purpose of
 /// full serialization and the one of just extracting a hash.
+impl HashWriteable for Block {
+	type MakeWriteable = ser::hash_writeable_default::No;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+		self.header.write_for_hash(writer)
+	}
+}
 impl Writeable for Block {
 	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		self.header.write(writer)?;
-
-		if writer.serialization_mode() != ser::SerializationMode::Hash {
-			self.body.write(writer)?;
-		}
-		Ok(())
+		self.body.write(writer)
 	}
 }
 

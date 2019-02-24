@@ -16,7 +16,7 @@ use self::core::core::hash::{DefaultHashable, Hash};
 use self::core::core::pmmr::{self, Backend};
 use self::core::core::BlockHeader;
 use self::core::ser;
-use self::core::ser::{FixedLength, PMMRable, Readable, Reader, Writeable, Writer};
+use self::core::ser::{FixedLength, HashWriteable, PMMRable, Readable, Reader, Writeable, Writer};
 use croaring;
 use croaring::Bitmap;
 use grin_core as core;
@@ -39,8 +39,9 @@ impl PMMRable for TestElem {
 	}
 }
 
-impl Writeable for TestElem {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+impl HashWriteable for TestElem {
+	type MakeWriteable = ser::hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		r#try!(writer.write_u32(self.0[0]));
 		r#try!(writer.write_u32(self.0[1]));
 		r#try!(writer.write_u32(self.0[2]));

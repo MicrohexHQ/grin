@@ -19,7 +19,7 @@
 //! To use it simply implement `Writeable` or `Readable` and then use the
 //! `serialize` or `deserialize` functions on them as appropriate.
 
-use crate::core::hash::{DefaultHashable, Hash, Hashed};
+use crate::core::hash::{Hash, Hashed};
 use crate::keychain::{BlindingFactor, Identifier, IDENTIFIER_SIZE};
 use crate::util::read_write::read_exact;
 use crate::util::secp::constants::{
@@ -106,21 +106,9 @@ impl error::Error for Error {
 	}
 }
 
-/// Signal to a serializable object how much of its data should be serialized
-#[derive(Copy, Clone, PartialEq, Eq)]
-pub enum SerializationMode {
-	/// Serialize everything sufficiently to fully reconstruct the object
-	Full,
-	/// Serialize the data that defines the object
-	Hash,
-}
-
 /// Implementations defined how different numbers and binary structures are
 /// written to an underlying stream or container (depending on implementation).
 pub trait Writer {
-	/// The mode this serializer is writing in
-	fn serialization_mode(&self) -> SerializationMode;
-
 	/// Writes a u8 as bytes
 	fn write_u8(&mut self, n: u8) -> Result<(), Error> {
 		self.write_fixed_bytes(&[n])
@@ -203,6 +191,25 @@ pub trait Reader {
 pub trait Writeable {
 	/// Write the data held by this Writeable to the provided writer
 	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error>;
+}
+pub mod hash_writeable_default {
+	pub trait Answer {}
+	pub struct Yes {}
+	pub struct No {}
+	impl Answer for Yes {}
+	impl Answer for No {}
+}
+pub trait HashWriteable {
+	type MakeWriteable: hash_writeable_default::Answer;
+	fn write_for_hash<W: Writer>(&self, write: &mut W) -> Result<(), Error>;
+}
+impl<H> Writeable for H
+where
+	H: HashWriteable<MakeWriteable = hash_writeable_default::Yes>,
+{
+	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+		self.write_for_hash(writer)
+	}
 }
 
 /// Reader that exposes an Iterator interface.
@@ -447,14 +454,16 @@ impl Readable for Commitment {
 	}
 }
 
-impl Writeable for Commitment {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+impl HashWriteable for Commitment {
+	type MakeWriteable = hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
 		writer.write_fixed_bytes(self)
 	}
 }
 
-impl Writeable for BlindingFactor {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+impl HashWriteable for BlindingFactor {
+	type MakeWriteable = hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
 		writer.write_fixed_bytes(self)
 	}
 }
@@ -483,8 +492,9 @@ impl Readable for Identifier {
 	}
 }
 
-impl Writeable for RangeProof {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+impl HashWriteable for RangeProof {
+	type MakeWriteable = hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
 		writer.write_bytes(self)
 	}
 }
@@ -570,10 +580,6 @@ impl<'a> BinWriter<'a> {
 }
 
 impl<'a> Writer for BinWriter<'a> {
-	fn serialization_mode(&self) -> SerializationMode {
-		SerializationMode::Full
-	}
-
 	fn write_fixed_bytes<T: AsFixedBytes>(&mut self, fixed: &T) -> Result<(), Error> {
 		let bs = fixed.as_ref();
 		self.sink.write_all(bs)?;
@@ -583,8 +589,9 @@ impl<'a> Writer for BinWriter<'a> {
 
 macro_rules! impl_int {
 	($int:ty, $w_fn:ident, $r_fn:ident) => {
-		impl Writeable for $int {
-			fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+		impl HashWriteable for $int {
+			type MakeWriteable = hash_writeable_default::Yes;
+			fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
 				writer.$w_fn(*self)
 			}
 		}
@@ -624,6 +631,18 @@ where
 	}
 }
 
+impl<T> HashWriteable for Vec<T>
+where
+	T: HashWriteable,
+{
+	type MakeWriteable = hash_writeable_default::No;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+		for elmt in self {
+			elmt.write_for_hash(writer)?;
+		}
+		Ok(())
+	}
+}
 impl<T> Writeable for Vec<T>
 where
 	T: Writeable,
@@ -636,12 +655,20 @@ where
 	}
 }
 
-impl<'a, A: Writeable> Writeable for &'a A {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
-		Writeable::write(*self, writer)
+impl<'a, A: HashWriteable> HashWriteable for &'a A {
+	type MakeWriteable = hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+		HashWriteable::write_for_hash(*self, writer)
 	}
 }
 
+impl<A: HashWriteable, B: HashWriteable> HashWriteable for (A, B) {
+	type MakeWriteable = hash_writeable_default::No;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+		HashWriteable::write_for_hash(&self.0, writer)?;
+		HashWriteable::write_for_hash(&self.1, writer)
+	}
+}
 impl<A: Writeable, B: Writeable> Writeable for (A, B) {
 	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
 		Writeable::write(&self.0, writer)?;
@@ -662,6 +689,14 @@ impl<A: Writeable, B: Writeable, C: Writeable> Writeable for (A, B, C) {
 		Writeable::write(&self.2, writer)
 	}
 }
+impl<A: HashWriteable, B: HashWriteable, C: HashWriteable> HashWriteable for (A, B, C) {
+	type MakeWriteable = hash_writeable_default::No;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+		HashWriteable::write_for_hash(&self.0, writer)?;
+		HashWriteable::write_for_hash(&self.1, writer)?;
+		HashWriteable::write_for_hash(&self.2, writer)
+	}
+}
 
 impl<A: Writeable, B: Writeable, C: Writeable, D: Writeable> Writeable for (A, B, C, D) {
 	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
@@ -669,6 +704,18 @@ impl<A: Writeable, B: Writeable, C: Writeable, D: Writeable> Writeable for (A, B
 		Writeable::write(&self.1, writer)?;
 		Writeable::write(&self.2, writer)?;
 		Writeable::write(&self.3, writer)
+	}
+}
+
+impl<A: HashWriteable, B: HashWriteable, C: HashWriteable, D: HashWriteable> HashWriteable
+	for (A, B, C, D)
+{
+	type MakeWriteable = hash_writeable_default::No;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+		HashWriteable::write_for_hash(&self.0, writer)?;
+		HashWriteable::write_for_hash(&self.1, writer)?;
+		HashWriteable::write_for_hash(&self.2, writer)?;
+		HashWriteable::write_for_hash(&self.3, writer)
 	}
 }
 
@@ -693,8 +740,9 @@ impl<A: Readable, B: Readable, C: Readable, D: Readable> Readable for (A, B, C, 
 	}
 }
 
-impl Writeable for [u8; 4] {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+impl HashWriteable for [u8; 4] {
+	type MakeWriteable = hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
 		writer.write_bytes(self)
 	}
 }
@@ -706,7 +754,7 @@ pub trait FixedLength {
 }
 
 /// Trait for types that can be added to a PMMR.
-pub trait PMMRable: Writeable + Clone + Debug + DefaultHashable {
+pub trait PMMRable: HashWriteable + Clone + Debug {
 	/// The type of element actually stored in the MMR data file.
 	/// This allows us to store Hash elements in the header MMR for variable size BlockHeaders.
 	type E: FixedLength + Readable + Writeable;
@@ -721,7 +769,7 @@ pub trait PMMRIndexHashable {
 	fn hash_with_index(&self, index: u64) -> Hash;
 }
 
-impl<T: DefaultHashable> PMMRIndexHashable for T {
+impl<T: HashWriteable> PMMRIndexHashable for T {
 	fn hash_with_index(&self, index: u64) -> Hash {
 		(index, self).hash()
 	}

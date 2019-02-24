@@ -24,7 +24,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use crate::consensus::{graph_weight, MIN_DIFFICULTY, SECOND_POW_EDGE_BITS};
 use crate::core::hash::{DefaultHashable, Hashed};
 use crate::global;
-use crate::ser::{self, FixedLength, Readable, Reader, Writeable, Writer};
+use crate::ser::{self, FixedLength, HashWriteable, Readable, Reader, Writeable, Writer};
 
 use crate::pow::common::EdgeType;
 use crate::pow::error::Error;
@@ -238,7 +238,21 @@ impl Default for ProofOfWork {
 		}
 	}
 }
-
+impl HashWriteable for ProofOfWork {
+	type MakeWriteable = ser::hash_writeable_default::No;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+		self.proof.write_for_hash(writer)
+	}
+}
+/// Wrapper to serialize ProofOfWork
+pub struct VersionedPow<'a>(pub &'a ProofOfWork, pub u16);
+impl<'a> Writeable for VersionedPow<'a> {
+	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+		self.0.write_pre_pow(self.1, writer)?;
+		writer.write_u64(self.0.nonce)?;
+		self.0.proof.write(writer)
+	}
+}
 impl ProofOfWork {
 	/// Read implementation, can't define as trait impl as we need a version
 	pub fn read(_ver: u16, reader: &mut dyn Reader) -> Result<ProofOfWork, ser::Error> {
@@ -252,17 +266,6 @@ impl ProofOfWork {
 			nonce,
 			proof,
 		})
-	}
-
-	/// Write implementation, can't define as trait impl as we need a version
-	pub fn write<W: Writer>(&self, ver: u16, writer: &mut W) -> Result<(), ser::Error> {
-		if writer.serialization_mode() != ser::SerializationMode::Hash {
-			self.write_pre_pow(ver, writer)?;
-			writer.write_u64(self.nonce)?;
-		}
-
-		self.proof.write(writer)?;
-		Ok(())
 	}
 
 	/// Write the pre-hash portion of the header
@@ -428,11 +431,9 @@ impl Readable for Proof {
 	}
 }
 
-impl Writeable for Proof {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
-		if writer.serialization_mode() != ser::SerializationMode::Hash {
-			writer.write_u8(self.edge_bits)?;
-		}
+impl HashWriteable for Proof {
+	type MakeWriteable = ser::hash_writeable_default::No;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
 		let nonce_bits = self.edge_bits as usize;
 		let mut bitvec = BitVec::new(nonce_bits * global::proofsize());
 		for (n, nonce) in self.nonces.iter().enumerate() {
@@ -442,8 +443,14 @@ impl Writeable for Proof {
 				}
 			}
 		}
-		writer.write_fixed_bytes(&bitvec.bits)?;
-		Ok(())
+		writer.write_fixed_bytes(&bitvec.bits)
+	}
+}
+
+impl Writeable for Proof {
+	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
+		writer.write_u8(self.edge_bits)?;
+		self.write_for_hash(writer)
 	}
 }
 

@@ -257,7 +257,7 @@ impl MessageHandler for Protocol {
 					let file_sz = txhashset.reader.metadata()?.len();
 					let mut resp = Response::new(
 						Type::TxHashSetArchive,
-						&TxHashSetArchive {
+						TxHashSetArchive {
 							height: sm_req.height as u64,
 							hash: sm_req.hash,
 							bytes: file_sz,

@@ -25,7 +25,9 @@ use std::{fmt, ops};
 
 use crate::blake2::blake2b::Blake2b;
 
-use crate::ser::{self, AsFixedBytes, Error, FixedLength, Readable, Reader, Writeable, Writer};
+use crate::ser::{
+	self, AsFixedBytes, Error, FixedLength, HashWriteable, Readable, Reader, Writeable, Writer,
+};
 use crate::util;
 
 /// A hash consisting of all zeroes, used as a sentinel. No known preimage.
@@ -162,8 +164,9 @@ impl Readable for Hash {
 	}
 }
 
-impl Writeable for Hash {
-	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
+impl HashWriteable for Hash {
+	type MakeWriteable = ser::hash_writeable_default::Yes;
+	fn write_for_hash<W: Writer>(&self, writer: &mut W) -> Result<(), Error> {
 		writer.write_fixed_bytes(&self.0)
 	}
 }
@@ -211,10 +214,6 @@ impl Default for HashWriter {
 }
 
 impl ser::Writer for HashWriter {
-	fn serialization_mode(&self) -> ser::SerializationMode {
-		ser::SerializationMode::Hash
-	}
-
 	fn write_fixed_bytes<T: AsFixedBytes>(&mut self, b32: &T) -> Result<(), ser::Error> {
 		self.state.update(b32.as_ref());
 		Ok(())
@@ -229,20 +228,20 @@ pub trait Hashed {
 
 /// Implementing this trait enables the default
 /// hash implementation
-pub trait DefaultHashable: Writeable {}
+pub trait DefaultHashable: HashWriteable {}
 impl<D: DefaultHashable> Hashed for D {
 	fn hash(&self) -> Hash {
 		let mut hasher = HashWriter::default();
-		Writeable::write(self, &mut hasher).unwrap();
+		HashWriteable::write_for_hash(self, &mut hasher).unwrap();
 		let mut ret = [0; 32];
 		hasher.finalize(&mut ret);
 		Hash(ret)
 	}
 }
 
-impl<D: DefaultHashable> DefaultHashable for &D {}
-impl<D: DefaultHashable, E: DefaultHashable> DefaultHashable for (D, E) {}
-impl<D: DefaultHashable, E: DefaultHashable, F: DefaultHashable> DefaultHashable for (D, E, F) {}
+/// All tuples should be DefaultHashable -- if needed, add more
+impl<D: HashWriteable, E: HashWriteable> DefaultHashable for (D, E) {}
+impl<D: HashWriteable, E: HashWriteable, F: HashWriteable> DefaultHashable for (D, E, F) {}
 
 /// Implement Hashed trait for external types here
 impl DefaultHashable for crate::util::secp::pedersen::RangeProof {}
